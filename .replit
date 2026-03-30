@@ -24,3 +24,11 @@ expertMode = true
 [postMerge]
 path = "scripts/post-merge.sh"
 timeoutMs = 20000
+
+[userenv]
+
+[userenv.shared]
+SUPABASE_URL = "https://xoskumzhbvazqaazgfyt.supabase.co"
+EXPO_PUBLIC_SUPABASE_URL = "https://xoskumzhbvazqaazgfyt.supabase.co"
+GOOGLE_CLIENT_ID = "597295922512-pbjefe7ngm74ouqli0skhurvhlv405fu.apps.googleusercontent.com"
+EXPO_PUBLIC_GOOGLE_CLIENT_ID = "597295922512-pbjefe7ngm74ouqli0skhurvhlv405fu.apps.googleusercontent.com"
