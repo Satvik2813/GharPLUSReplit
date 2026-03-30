@@ -8,36 +8,46 @@ import {
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { Stack, useRouter, useSegments } from "expo-router";
 import * as SplashScreen from "expo-splash-screen";
-import React, { useEffect } from "react";
+import React, { useEffect, useState } from "react";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { KeyboardProvider } from "react-native-keyboard-controller";
 import { SafeAreaProvider } from "react-native-safe-area-context";
+import type { Session } from "@supabase/supabase-js";
 
 import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { AppProvider, useApp } from "@/contexts/AppContext";
+import { supabase } from "@/lib/supabase";
 
 SplashScreen.preventAutoHideAsync();
 
 const queryClient = new QueryClient();
 
-function RootNavigation() {
+function RootNavigation({ session }: { session: Session | null }) {
   const { isSetupComplete } = useApp();
   const router = useRouter();
   const segments = useSegments();
 
   useEffect(() => {
     const inSetup = segments[0] === "setup";
-    if (!isSetupComplete && !inSetup) {
-      router.replace("/setup");
-    } else if (isSetupComplete && inSetup) {
-      router.replace("/(tabs)");
+    const inLogin = segments[0] === "login";
+
+    if (!session) {
+      // Not logged in — go to login
+      if (!inLogin) router.replace("/login");
+    } else if (!isSetupComplete) {
+      // Logged in, setup not done
+      if (!inSetup) router.replace("/setup");
+    } else {
+      // Logged in and setup done — go to tabs
+      if (inSetup || inLogin) router.replace("/(tabs)");
     }
-  }, [isSetupComplete, segments]);
+  }, [session, isSetupComplete, segments]);
 
   return (
     <Stack screenOptions={{ headerShown: false }}>
       <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
       <Stack.Screen name="setup" options={{ headerShown: false }} />
+      <Stack.Screen name="login" options={{ headerShown: false }} />
     </Stack>
   );
 }
@@ -49,14 +59,31 @@ export default function RootLayout() {
     Inter_600SemiBold,
     Inter_700Bold,
   });
+  const [session, setSession] = useState<Session | null>(null);
+  const [authLoaded, setAuthLoaded] = useState(false);
 
   useEffect(() => {
-    if (fontsLoaded || fontError) {
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      setSession(session);
+      setAuthLoaded(true);
+    });
+
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(
+      (_event, session) => {
+        setSession(session);
+      }
+    );
+
+    return () => subscription.unsubscribe();
+  }, []);
+
+  useEffect(() => {
+    if ((fontsLoaded || fontError) && authLoaded) {
       SplashScreen.hideAsync();
     }
-  }, [fontsLoaded, fontError]);
+  }, [fontsLoaded, fontError, authLoaded]);
 
-  if (!fontsLoaded && !fontError) return null;
+  if ((!fontsLoaded && !fontError) || !authLoaded) return null;
 
   return (
     <SafeAreaProvider>
@@ -65,7 +92,7 @@ export default function RootLayout() {
           <AppProvider>
             <GestureHandlerRootView style={{ flex: 1 }}>
               <KeyboardProvider>
-                <RootNavigation />
+                <RootNavigation session={session} />
               </KeyboardProvider>
             </GestureHandlerRootView>
           </AppProvider>

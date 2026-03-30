@@ -1,5 +1,6 @@
 import React from "react";
 import {
+  Alert,
   Platform,
   ScrollView,
   StyleSheet,
@@ -15,6 +16,7 @@ import { GharCard } from "@/components/GharCard";
 import { GharButton } from "@/components/GharButton";
 import { useApp } from "@/contexts/AppContext";
 import * as Haptics from "expo-haptics";
+import { supabase } from "@/lib/supabase";
 
 interface SettingRowProps {
   icon: string;
@@ -65,6 +67,24 @@ export default function SettingsScreen() {
     setGroceryItems([]);
     setMealPlan([]);
     router.replace("/setup");
+  };
+
+  const handleSignOut = () => {
+    Alert.alert(
+      "Sign Out",
+      "Are you sure you want to sign out?",
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Sign Out",
+          style: "destructive",
+          onPress: async () => {
+            await supabase.auth.signOut();
+            // Auth state change in _layout.tsx handles redirect to login
+          },
+        },
+      ]
+    );
   };
 
   const handleResetBudget = () => {
@@ -156,6 +176,17 @@ export default function SettingsScreen() {
             iconColor={Colors.primary}
             label="AI Powered by"
             value="Google Gemini"
+          />
+        </GharCard>
+
+        {/* Account */}
+        <Text style={styles.section}>Account</Text>
+        <GharCard style={styles.settingGroup}>
+          <SettingRow
+            icon="log-out"
+            iconColor={Colors.danger}
+            label="Sign Out"
+            onPress={handleSignOut}
           />
         </GharCard>
 

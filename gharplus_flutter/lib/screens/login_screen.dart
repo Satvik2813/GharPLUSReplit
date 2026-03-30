@@ -1,7 +1,8 @@
 import 'package:flutter/material.dart';
-import 'package:shared_preferences/shared_preferences.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:url_launcher/url_launcher.dart';
 import '../theme.dart';
-import 'main_nav.dart';
+import '../config.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -11,48 +12,97 @@ class LoginScreen extends StatefulWidget {
 }
 
 class _LoginScreenState extends State<LoginScreen> {
+  final _supabase = Supabase.instance.client;
   final TextEditingController _phoneController = TextEditingController();
+  final TextEditingController _otpController = TextEditingController();
   bool _isLoading = false;
   bool _otpSent = false;
-  final TextEditingController _otpController = TextEditingController();
+
+  Future<void> _signInWithGoogle() async {
+    setState(() => _isLoading = true);
+    try {
+      final res = await _supabase.auth.signInWithOAuth(
+        OAuthProvider.google,
+        redirectTo: '${AppConfig.appScheme}://login-callback',
+        authScreenLaunchMode: LaunchMode.externalApplication,
+      );
+      if (!res) throw Exception('Google Sign-In was cancelled');
+      // Auth state listener in main.dart handles navigation
+    } on AuthException catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(e.message), backgroundColor: AppColors.danger),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(e.toString()), backgroundColor: AppColors.danger),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _isLoading = false);
+    }
+  }
 
   Future<void> _sendOtp() async {
-    if (_phoneController.text.trim().length < 10) {
+    final phone = _phoneController.text.trim();
+    if (phone.length < 10) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Enter a valid 10-digit number')),
       );
       return;
     }
     setState(() => _isLoading = true);
-    await Future.delayed(const Duration(seconds: 1));
-    setState(() {
-      _isLoading = false;
-      _otpSent = true;
-    });
+    try {
+      await _supabase.auth.signInWithOtp(phone: '+91$phone');
+      if (mounted) setState(() => _otpSent = true);
+    } on AuthException catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(e.message), backgroundColor: AppColors.danger),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _isLoading = false);
+    }
   }
 
   Future<void> _verifyOtp() async {
-    setState(() => _isLoading = true);
-    await Future.delayed(const Duration(seconds: 1));
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setBool('isLoggedIn', true);
-    if (mounted) {
-      Navigator.of(context).pushReplacement(
-        MaterialPageRoute(builder: (_) => const MainNav()),
+    final otp = _otpController.text.trim();
+    if (otp.length < 4) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Enter the OTP you received')),
       );
+      return;
+    }
+    setState(() => _isLoading = true);
+    try {
+      await _supabase.auth.verifyOTP(
+        phone: '+91${_phoneController.text.trim()}',
+        token: otp,
+        type: OtpType.sms,
+      );
+      // Auth state listener in main.dart handles navigation
+    } on AuthException catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(e.message),
+            backgroundColor: AppColors.danger,
+          ),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _isLoading = false);
     }
   }
 
-  Future<void> _signInWithGoogle() async {
-    setState(() => _isLoading = true);
-    await Future.delayed(const Duration(seconds: 1));
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setBool('isLoggedIn', true);
-    if (mounted) {
-      Navigator.of(context).pushReplacement(
-        MaterialPageRoute(builder: (_) => const MainNav()),
-      );
-    }
+  @override
+  void dispose() {
+    _phoneController.dispose();
+    _otpController.dispose();
+    super.dispose();
   }
 
   @override
@@ -67,14 +117,8 @@ class _LoginScreenState extends State<LoginScreen> {
             children: [
               const Spacer(flex: 2),
               // App Logo
-              Image.asset(
-                'assets/images/logo.png',
-                width: 88,
-                height: 88,
-                fit: BoxFit.contain,
-              ),
+              Image.asset('assets/images/logo.png', width: 88, height: 88, fit: BoxFit.contain),
               const SizedBox(height: 32),
-              // App Name
               const Text(
                 'GHARPLUS',
                 style: TextStyle(
@@ -86,7 +130,32 @@ class _LoginScreenState extends State<LoginScreen> {
               ),
               const Spacer(flex: 2),
               // Google Sign In
-              _GoogleSignInButton(onTap: _isLoading ? null : _signInWithGoogle),
+              GestureDetector(
+                onTap: _isLoading ? null : _signInWithGoogle,
+                child: Container(
+                  width: double.infinity,
+                  height: 56,
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(14),
+                  ),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      const Text('G', style: TextStyle(color: Color(0xFF4285F4), fontSize: 22, fontWeight: FontWeight.w800)),
+                      const SizedBox(width: 10),
+                      const Text(
+                        'Continue with Google',
+                        style: TextStyle(color: Color(0xFF333333), fontSize: 16, fontWeight: FontWeight.w600),
+                      ),
+                      if (_isLoading && !_otpSent) ...[
+                        const SizedBox(width: 10),
+                        const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2, color: Color(0xFF4285F4))),
+                      ],
+                    ],
+                  ),
+                ),
+              ),
               const SizedBox(height: 24),
               // OR divider
               Row(
@@ -100,7 +169,7 @@ class _LoginScreenState extends State<LoginScreen> {
                 ],
               ),
               const SizedBox(height: 24),
-              // Phone number input
+              // Phone / OTP
               if (!_otpSent) ...[
                 Container(
                   decoration: BoxDecoration(
@@ -115,14 +184,7 @@ class _LoginScreenState extends State<LoginScreen> {
                         decoration: const BoxDecoration(
                           border: Border(right: BorderSide(color: AppColors.border)),
                         ),
-                        child: const Text(
-                          '+91',
-                          style: TextStyle(
-                            color: AppColors.textSecondary,
-                            fontSize: 16,
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
+                        child: const Text('+91', style: TextStyle(color: AppColors.textSecondary, fontSize: 16, fontWeight: FontWeight.w600)),
                       ),
                       Expanded(
                         child: TextField(
@@ -154,14 +216,16 @@ class _LoginScreenState extends State<LoginScreen> {
                     ),
                     child: _isLoading
                         ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
-                        : const Text(
-                            'Send OTP via SMS',
-                            style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700, color: Colors.white),
-                          ),
+                        : const Text('Send OTP via SMS', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700, color: Colors.white)),
                   ),
                 ),
               ] else ...[
-                // OTP input
+                Text(
+                  'OTP sent to +91 ${_phoneController.text}',
+                  style: const TextStyle(color: AppColors.textSecondary, fontSize: 14),
+                  textAlign: TextAlign.center,
+                ),
+                const SizedBox(height: 16),
                 TextField(
                   controller: _otpController,
                   keyboardType: TextInputType.number,
@@ -170,7 +234,7 @@ class _LoginScreenState extends State<LoginScreen> {
                   style: const TextStyle(color: AppColors.textPrimary, fontSize: 24, letterSpacing: 8),
                   decoration: InputDecoration(
                     hintText: '• • • • • •',
-                    hintStyle: const TextStyle(color: AppColors.textMuted, fontSize: 24, letterSpacing: 8),
+                    hintStyle: const TextStyle(color: AppColors.textMuted, fontSize: 20, letterSpacing: 8),
                     filled: true,
                     fillColor: AppColors.surface,
                     border: OutlineInputBorder(borderRadius: BorderRadius.circular(14), borderSide: const BorderSide(color: AppColors.border)),
@@ -190,12 +254,11 @@ class _LoginScreenState extends State<LoginScreen> {
                   ),
                 ),
                 TextButton(
-                  onPressed: () => setState(() => _otpSent = false),
+                  onPressed: () => setState(() { _otpSent = false; _otpController.clear(); }),
                   child: const Text('← Change number', style: TextStyle(color: AppColors.textMuted)),
                 ),
               ],
               const Spacer(),
-              // Terms
               const Text.rich(
                 TextSpan(
                   text: 'By continuing, you agree to our ',
@@ -216,78 +279,4 @@ class _LoginScreenState extends State<LoginScreen> {
       ),
     );
   }
-}
-
-class _GoogleSignInButton extends StatelessWidget {
-  final VoidCallback? onTap;
-  const _GoogleSignInButton({this.onTap});
-
-  @override
-  Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: onTap,
-      child: Container(
-        width: double.infinity,
-        height: 56,
-        decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(14),
-        ),
-        child: Row(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            // Google G logo using colored circles
-            SizedBox(
-              width: 24,
-              height: 24,
-              child: CustomPaint(painter: _GoogleLogoPainter()),
-            ),
-            const SizedBox(width: 12),
-            const Text(
-              'Continue with Google',
-              style: TextStyle(
-                color: Color(0xFF333333),
-                fontSize: 16,
-                fontWeight: FontWeight.w600,
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class _GoogleLogoPainter extends CustomPainter {
-  @override
-  void paint(Canvas canvas, Size size) {
-    final paint = Paint()..style = PaintingStyle.fill;
-    final rect = Rect.fromLTWH(0, 0, size.width, size.height);
-    final center = Offset(size.width / 2, size.height / 2);
-    final radius = size.width / 2;
-
-    // Draw the G
-    paint.color = const Color(0xFF4285F4);
-    canvas.drawArc(rect, -0.3, 2.6, false, paint..style = PaintingStyle.stroke ..strokeWidth = size.width * 0.25);
-
-    // Simplified: just draw a colored circle for now
-    paint.style = PaintingStyle.fill;
-    paint.color = const Color(0xFF4285F4);
-    canvas.drawCircle(center, radius, paint);
-    paint.color = Colors.white;
-    canvas.drawCircle(center, radius * 0.65, paint);
-    paint.color = const Color(0xFF4285F4);
-    final textPainter = TextPainter(
-      text: const TextSpan(
-        text: 'G',
-        style: TextStyle(color: Color(0xFF4285F4), fontSize: 14, fontWeight: FontWeight.bold),
-      ),
-      textDirection: TextDirection.ltr,
-    );
-    textPainter.layout();
-    textPainter.paint(canvas, Offset(center.dx - textPainter.width / 2, center.dy - textPainter.height / 2));
-  }
-
-  @override
-  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
 }
